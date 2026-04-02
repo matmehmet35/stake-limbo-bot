@@ -1,0 +1,167 @@
+let config = null;
+let state = {
+  running: false,
+  currentBet: 0,
+  currentTarget: 2.00,
+  lossStreak: 0,
+  win: 0,
+  loss: 0,
+  startBalance: 0,
+  profit: 0
+};
+
+let lastResult = null;
+
+function getBalance() {
+  const el = document.querySelector('[data-test="balance"]');
+  return el ? parseFloat(el.innerText.replace(/[^0-9.]/g, '')) : 0;
+}
+
+function findElement(selectors) {
+  for(let sel of selectors) {
+    const el = document.querySelector(sel);
+    if(el) return el;
+  }
+  return null;
+}
+
+async function placeBet() {
+  if(!state.running) return;
+  
+  try {
+    // Stake Limbo elementleri (güncel seçiciler)
+    const betInput = findElement([
+      'input[data-test="bet-amount-input"]',
+      'input[name="amount"]',
+      '.input-wrap input'
+    ]);
+    
+    const targetInput = findElement([
+      'input[data-test="target-input"]',
+      'input[name="target"]'
+    ]);
+    
+    const betButton = findElement([
+      'button[data-test="bet-button"]',
+      'button.bet-button'
+    ]);
+    
+    if(!betInput || !betButton) {
+      sendLog('Elementler bulunamadı, sayfayı yenile');
+      return;
+    }
+    
+    // Değerleri gir
+    betInput.value = state.currentBet.toFixed(8);
+    betInput.dispatchEvent(new Event('input', { bubbles: true }));
+    
+    if(targetInput) {
+      targetInput.value = state.currentTarget.toFixed(2);
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    
+    await new Promise(r => setTimeout(r, 100));
+    betButton.click();
+    
+  } catch(e) {
+    sendLog('Hata: ' + e.message);
+  }
+}
+
+function checkResult() {
+  const resultEl = findElement([
+    '[data-test="game-result"]',
+    '.result .multiplier',
+    '.game-result'
+  ]);
+  
+  if(!resultEl || resultEl.innerText === lastResult) return;
+  
+  lastResult = resultEl.innerText;
+  const multiplier = parseFloat(lastResult);
+  if(isNaN(multiplier)) return;
+  
+  const isWin = multiplier >= state.currentTarget;
+  
+  // İstatistik güncelle
+  if(isWin) {
+    state.win++;
+    state.lossStreak = 0;
+    state.currentBet = config.baseBet;
+    state.currentTarget = config.baseTarget; // kazanınca sıfırla
+    sendLog(`KAZANDIN! ${multiplier.toFixed(2)}x`);
+    
+    if(config.stopWin) {
+      state.running = false;
+      sendLog('Kazanınca dur aktif - bot durduruldu');
+      return;
+    }
+  } else {
+    state.loss++;
+    state.lossStreak++;
+    state.currentBet *= config.martingale;
+    
+    // YENİ ÖZELLİK: BELLI KAYIPTA HEDEF ARTIR
+    if(config.lossTargetActive && state.lossStreak >= config.lossCount) {
+      state.currentTarget = Math.min(
+        state.currentTarget + config.targetIncrease,
+        config.maxTarget
+      );
+      sendLog(`Hedef artırıldı: ${state.currentTarget.toFixed(2)}x (${state.lossStreak} kayıp)`);
+    }
+    
+    sendLog(`KAYBETTIN ${multiplier.toFixed(2)}x`);
+  }
+  
+  // Bakiye kontrol
+  const balance = getBalance();
+  state.profit = balance - state.startBalance;
+  
+  if(balance <= config.minBal || balance >= config.maxBal) {
+    state.running = false;
+    sendLog('Bakiye limitine ulaşıldı - durduruldu');
+  }
+  
+  sendStats();
+  
+  // Sonraki bahis
+  if(state.running) {
+    setTimeout(placeBet, config.speed + Math.random() * 200);
+  }
+}
+
+function sendStats() {
+  chrome.runtime.sendMessage({
+    action: "stats",
+    balance: getBalance().toFixed(8),
+    profit: state.profit.toFixed(8),
+    win: state.win,
+    loss: state.loss,
+    currentTarget: state.currentTarget,
+    lossStreak: state.lossStreak
+  });
+}
+
+function sendLog(text) {
+  chrome.runtime.sendMessage({action: "log", text});
+}
+
+// Mesaj dinle
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if(msg.action === "start") {
+    config = msg.config;
+    state.running = true;
+    state.currentBet = config.baseBet;
+    state.currentTarget = config.baseTarget;
+    state.startBalance = getBalance();
+    state.lossStreak = 0;
+    placeBet();
+  }
+  if(msg.action === "stop") {
+    state.running = false;
+  }
+});
+
+// Sonucu sürekli kontrol et
+setInterval(checkResult, 500);
+sendLog('Bot hazır - Stake Limbo sayfasında START a bas');

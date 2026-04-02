@@ -1,0 +1,83 @@
+document.querySelectorAll('.toggle').forEach(t => {
+  t.onclick = () => t.classList.toggle('on');
+});
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// Ayarları yükle
+chrome.storage.local.get('botConfig', data => {
+  if(data.botConfig) {
+    Object.keys(data.botConfig).forEach(k => {
+      const el = document.getElementById(k);
+      if(el) {
+        if(el.type === 'checkbox' || el.classList.contains('toggle')) {
+          if(data.botConfig[k]) el.classList.add('on');
+        } else {
+          el.value = data.botConfig[k];
+        }
+      }
+    });
+  }
+});
+
+document.getElementById('save').onclick = () => {
+  const config = {
+    baseBet: document.getElementById('baseBet').value,
+    baseTarget: document.getElementById('baseTarget').value,
+    martingale: document.getElementById('martingale').value,
+    speed: document.getElementById('speed').value,
+    lossTargetToggle: document.getElementById('lossTargetToggle').classList.contains('on'),
+    lossCount: document.getElementById('lossCount').value,
+    targetIncrease: document.getElementById('targetIncrease').value,
+    maxTarget: document.getElementById('maxTarget').value,
+    stopWin: document.getElementById('stopWin').classList.contains('on'),
+    minBal: document.getElementById('minBal').value,
+    maxBal: document.getElementById('maxBal').value
+  };
+  chrome.storage.local.set({botConfig: config});
+  log('Ayarlar kaydedildi');
+}
+
+document.getElementById('start').onclick = () => {
+  const config = {
+    baseBet: parseFloat(document.getElementById('baseBet').value),
+    baseTarget: parseFloat(document.getElementById('baseTarget').value),
+    martingale: parseFloat(document.getElementById('martingale').value),
+    speed: parseInt(document.getElementById('speed').value),
+    lossTargetActive: document.getElementById('lossTargetToggle').classList.contains('on'),
+    lossCount: parseInt(document.getElementById('lossCount').value),
+    targetIncrease: parseFloat(document.getElementById('targetIncrease').value),
+    maxTarget: parseFloat(document.getElementById('maxTarget').value),
+    stopWin: document.getElementById('stopWin').classList.contains('on'),
+    minBal: parseFloat(document.getElementById('minBal').value),
+    maxBal: parseFloat(document.getElementById('maxBal').value)
+  };
+  
+  chrome.tabs.query({active:true, currentWindow:true}, tabs => {
+    chrome.tabs.sendMessage(tabs[0].id, {action: "start", config});
+    log('Bot başlatıldı');
+  });
+}
+
+document.getElementById('stop').onclick = () => {
+  chrome.tabs.query({active:true, currentWindow:true}, tabs => {
+    chrome.tabs.sendMessage(tabs[0].id, {action: "stop"});
+    log('Bot durduruldu');
+  });
+}
+
+// İstatistik güncelle
+chrome.runtime.onMessage.addListener(msg => {
+  if(msg.action === "stats") {
+    document.getElementById('balance').innerText = msg.balance;
+    document.getElementById('profit').innerText = msg.profit;
+    document.getElementById('wl').innerText = `${msg.win} / ${msg.loss}`;
+    document.getElementById('currentTarget').innerText = msg.currentTarget.toFixed(2) + 'x';
+    document.getElementById('lossStreak').innerText = msg.lossStreak;
+  }
+  if(msg.action === "log") log(msg.text);
+});

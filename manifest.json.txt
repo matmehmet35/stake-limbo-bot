@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Stake Limbo Bot Pro",
+  "version": "1.1",
+  "description": "Limbo - Belli kayıpta hedef artır",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "content_scripts": [{
+    "matches": ["https://stake.com/*", "https://stake.bet/*", "https://stake.ac/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
+  "icons": {
+    "128": "icon.png"
+  }
+}
